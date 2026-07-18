@@ -70,7 +70,24 @@ sudo systemctl restart docker
 echo "✓ NVIDIA Container Toolkit installed and configured"
 
 # ============================================================================
-# 3. Verify Installation
+# 3. Create Docker Network for LLM services
+# ============================================================================
+
+echo ""
+echo "=== Creating Docker Network: llm-net ==="
+echo ""
+
+NETWORK_NAME="llm-net"
+if docker network inspect "$NETWORK_NAME" &>/dev/null; then
+    echo "✓ Docker network '$NETWORK_NAME' already exists"
+else
+    echo "Creating Docker network '$NETWORK_NAME'..."
+    docker network create "$NETWORK_NAME"
+    echo "✓ Docker network '$NETWORK_NAME' created"
+fi
+
+# ============================================================================
+# 4. Verify Installation
 # ============================================================================
 
 echo ""
@@ -97,5 +114,9 @@ if docker run --rm --gpus all ubuntu nvidia-smi | grep 'NVIDIA-SMI' 2>/dev/null;
 else
     echo "⚠ Docker GPU support: not tested"
 fi
+
+# Show network info
+echo "✓ Docker network '$NETWORK_NAME' is ready"
+echo "   (Use it for containers: --network $NETWORK_NAME)"
 
 echo "✓ Setup complete!"

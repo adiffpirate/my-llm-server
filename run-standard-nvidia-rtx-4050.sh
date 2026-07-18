@@ -45,7 +45,9 @@ echo ""
 
 # Run container with logging - redirect stdout to log file only
 docker run --rm --name "${CONTAINER_NAME}" \
+    --network llm-net \
     --gpus all \
+    --ulimit memlock=-1:-1 \
     -p "${HOST_PORT}:8080" \
     -v "$(realpath ${MODEL_DIR}):/models" \
     "${IMAGE}" \
@@ -53,18 +55,23 @@ docker run --rm --name "${CONTAINER_NAME}" \
     --alias "standard" \
     --port 8080 \
     --host "0.0.0.0" \
+    --no-webui \
+    --parallel 1 \
+    --no-kv-unified \
+    --no-mmap \
+    --mlock \
     --n-gpu-layers all \
-    --cpu-moe \
+    --n-cpu-moe 28 \
     --ctx-size 131072 \
-    --threads 16 \
-    --batch-size 512 \
-    --ubatch-size 512 \
+    --threads 10 \
+    --batch-size 4096 \
+    --ubatch-size 1024 \
     --cache-type-k "q8_0" \
     --cache-type-v "q8_0" \
     --temp 1.0 \
     --top-p 0.95 \
     --top-k 64 \
-    --reasoning on \
+    --reasoning off \
     -lv 4 \
 > "${LOG_FILE}" 2>&1 &
 
@@ -77,8 +84,12 @@ if [[ -z "$CONTAINER_IP" ]]; then
     echo "   You can block manually later."
 else
     echo "🔒 Blocking internet for container IP $CONTAINER_IP"
-    # Drop any forwarded packet from the container that is NOT destined for Docker's internal subnets (172.16.0.0/12)
+    echo "   Allowing traffic to Docker internals (172.0.0.0/8) and local LAN (192.168.0.0/24)"
+    # 1. Insert a DROP rule at the top (will become rule #1)
     sudo iptables -I FORWARD -s "$CONTAINER_IP" ! -d 172.0.0.0/8 -j DROP
+    # 2. Insert an ACCEPT rule *before* the DROP rule (position 1)
+    #    This allows traffic to the local LAN network.
+    sudo iptables -I FORWARD 1 -s "$CONTAINER_IP" -d 192.168.0.0/24 -j ACCEPT
 fi
 
 # Wait for ready message
