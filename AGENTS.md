@@ -37,11 +37,13 @@ Every engine installer must keep this interface; `up.sh` depends on it.
 - `down.sh` targets: `--model`, `--webui`, `--all`, or an interactive menu (default both without a TTY).
 - Interactive `up.sh` asks about OpenWebUI after model selection; default **no** (~1 GB RAM). Declining stops a running OpenWebUI before the model loads.
 
-## Host and model constraints
+## Profile constraints
 
-- This host: RTX 5060 Ti 16 GB, driver 595, 52 GB RAM, 200 GB disk (~42 GB free with the model installed). Strata `IQ3_S`, text only, **256K context**, `k8v4` KV, **`LLM_RESIDENT_BUDGET_GIB=41`**, `PARALLEL=1`.
-- **Do not remove the resident budget.** Without it Strata page-locks ~43 GiB every start: 10–15 minutes, sometimes exceeding its ~945 s load timeout. With the cap, startup is ~1 minute and long-context throughput stays ~41 tok/s.
-- Use `LLM_CONTEXT=128k LLM_KV=int8` for more headroom. Avoid `--mlock`/unlimited memlock: the host locked-memory limit is 8 MB.
+Per-hardware specifics live with the profile; do not assume one machine's numbers apply to another.
+
+- `setup/rtx_5060_ti` targets a 16 GB RTX 5060 Ti and defaults to Strata `IQ3_S`, text only, **256K context**, `k8v4` KV, `LLM_RESIDENT_BUDGET_GIB=41`, `PARALLEL=1`. Measurements are in `setup/rtx_5060_ti/README.md`.
+- **Do not remove the resident budget from that profile.** Without it Strata page-locks all experts every start: many minutes on memory-tight hosts, sometimes exceeding Strata's computed load timeout.
+- Use `LLM_CONTEXT=128k LLM_KV=int8` for more headroom. Avoid `--mlock`/unlimited memlock: the locked-memory limit on the reference host is only 8 MB.
 - First Strata install needs ~140 GB free. Reinstalls skip that check when a GGUF already exists in the volume.
 - Pinned images (change deliberately, verify the tag exists): `ghcr.io/niko1221/strata:0.2.9-cuda13`, `ghcr.io/ggml-org/llama.cpp:server-cuda-b5343`, `ghcr.io/open-webui/open-webui:v0.13.0`.
 
@@ -58,7 +60,7 @@ docker compose --project-name <project> --env-file <dir>/.env -f <dir>/compose.y
 systemd-analyze --user verify ~/.config/systemd/user/llm-server-*.service
 ```
 
-- Real installs mutate the host and take over the GPU: use them only when asked. `./up.sh --no-webui` (~90 s) then `./down.sh --all` exercises install and teardown.
+- Real installs mutate the host, take over the GPU, and can take minutes to load a model: use them only when asked. `./up.sh --no-webui` then `./down.sh --all` exercises install and teardown.
 - Shell gotcha: `if ! cmd; then rc=$?` always yields `0`. The scripts use `if cmd; then :; else rc=$?`. Keep that pattern.
 - After changing a Compose template, force a reinstall (`LLM_FORCE_REINSTALL=1 ./up.sh`) or bump `TEMPLATE_VERSION`.
 
