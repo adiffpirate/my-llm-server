@@ -94,10 +94,10 @@ services:
       - "${BIND_ADDR}:${HOST_PORT}:8080"
     volumes:
       - openwebui-data:/app/backend/data
-      # OpenWebUI writes favicon.png into the static directory at startup.
-      # This volume is populated from the image on first use, so the root
-      # filesystem can stay read-only.
-      - openwebui-static:/app/backend/static
+      # OpenWebUI writes branding assets (favicon, splash, loader, custom.css)
+      # into its static directory at startup. This volume is populated from
+      # the image on first use, so the root filesystem can stay read-only.
+      - openwebui-static:/app/backend/open_webui/static
     networks:
       llm-net:
         aliases:
