@@ -28,6 +28,7 @@ CONTAINER="llm-server-openwebui"
 IMAGE="ghcr.io/open-webui/open-webui:v0.1.121"
 SERVICE_DIR="$SERVICE_CONFIG/$UNIT"
 VOLUME="llm-server-openwebui-data"
+STATIC_VOLUME="llm-server-openwebui-static"
 
 if ((DRY_RUN)); then
     cat <<EOF
@@ -67,6 +68,7 @@ HOST_PORT=$HOST_PORT
 BIND_ADDR=$BIND_ADDR
 PROJECT=$PROJECT
 CONTAINER=$CONTAINER
+STATIC_VOLUME=$STATIC_VOLUME
 API_KEY=$API_KEY
 WEBUI_SECRET_KEY=$WEBUI_SECRET_KEY
 EOF
@@ -92,6 +94,10 @@ services:
       - "${BIND_ADDR}:${HOST_PORT}:8080"
     volumes:
       - openwebui-data:/app/backend/data
+      # OpenWebUI writes favicon.png into the static directory at startup.
+      # This volume is populated from the image on first use, so the root
+      # filesystem can stay read-only.
+      - openwebui-static:/app/backend/static
     networks:
       llm-net:
         aliases:
@@ -117,6 +123,8 @@ services:
 volumes:
   openwebui-data:
     name: llm-server-openwebui-data
+  openwebui-static:
+    name: ${STATIC_VOLUME}
 
 networks:
   llm-net:

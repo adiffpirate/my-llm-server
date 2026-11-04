@@ -100,7 +100,7 @@ Model data:
 
 - Strata: Docker volume `llm-server-<hardware>-<engine>-strata-data`
 - llama.cpp: `<repo>/models`
-- OpenWebUI: Docker volume `llm-server-openwebui-data`
+- OpenWebUI: Docker volumes `llm-server-openwebui-data` and `llm-server-openwebui-static`
 
 ## Security model
 
