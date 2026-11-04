@@ -25,7 +25,7 @@ BIND_ADDR="${LLM_BIND_ADDR:-0.0.0.0}"
 UNIT="llm-server-openwebui.service"
 PROJECT="llm-server-openwebui"
 CONTAINER="llm-server-openwebui"
-IMAGE="ghcr.io/open-webui/open-webui:v0.1.121"
+IMAGE="ghcr.io/open-webui/open-webui:v0.13.0"
 SERVICE_DIR="$SERVICE_CONFIG/$UNIT"
 VOLUME="llm-server-openwebui-data"
 STATIC_VOLUME="llm-server-openwebui-static"
@@ -114,6 +114,16 @@ services:
     shm_size: 256mb
     pids_limit: 1024
     stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=3)
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 180s
     logging:
       driver: json-file
       options:
@@ -144,7 +154,7 @@ if ! start_unit "$UNIT"; then
     die "Failed to start $UNIT."
 fi
 
-if wait_http_running "http://127.0.0.1:${HOST_PORT}/api/config" "${LLM_HEALTH_TIMEOUT:-900}" "$CONTAINER" "OpenWebUI"; then
+if wait_http_running "http://127.0.0.1:${HOST_PORT}/health" "${LLM_HEALTH_TIMEOUT:-900}" "$CONTAINER" "OpenWebUI"; then
     :
 else
     rc=$?

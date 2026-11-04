@@ -72,6 +72,14 @@ systemctl --user status llm-server-openwebui
 
 Because lingering is enabled, the services start at boot without a login session. `down.sh` stops/disables the units and removes containers, but never removes model files or Docker volumes.
 
+Pinned images:
+
+```text
+ghcr.io/niko1221/strata:0.2.9-cuda13          Strata (CUDA 13, driver 580+)
+ghcr.io/ggml-org/llama.cpp:server-cuda-b5343   llama.cpp
+ghcr.io/open-webui/open-webui:v0.13.0         OpenWebUI
+```
+
 ## Endpoints
 
 - API: `http://<host>:8080/v1` (OpenAI-compatible)
