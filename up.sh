@@ -151,6 +151,49 @@ if ((DRY_RUN)); then
     exit 0
 fi
 
+# Pick the model before installing so the OpenWebUI question can come right
+# after the model selection, before the long Strata load.
+selection="$("$run_script" --select-only)" || die "Model selection failed."
+eval "$selection"
+[[ -n "${LLM_MODEL:-}" ]] || die "Model selection did not choose a model."
+export LLM_MODEL
+if [[ -n "${LLM_MODEL_PATH:-}" ]]; then
+    export LLM_MODEL_PATH
+fi
+
+ui_state="$SERVICE_STATE/llm-server-openwebui.service.env"
+ui_action=none
+case "$WEBUI_MODE" in
+    yes) ui_action=install ;;
+    no) ;;
+    auto)
+        if [[ -t 0 ]]; then
+            if [[ -f "$ui_state" ]]; then
+                if systemctl --user is-active --quiet llm-server-openwebui.service; then
+                    if confirm "OpenWebUI is running and uses about 1 GB of RAM. Keep it running?" no; then
+                        ui_action=keep
+                    else
+                        ui_action=stop
+                    fi
+                elif confirm "Start OpenWebUI (separate service, about 1 GB of RAM)?" no; then
+                    ui_action=start
+                fi
+            elif confirm "Install OpenWebUI (separate service, about 1 GB of RAM)?" no; then
+                ui_action=install
+            fi
+        fi
+        ;;
+esac
+
+# Free the memory before the model loads when the answer is no.
+if [[ "$ui_action" == "stop" ]]; then
+    if systemctl --user stop llm-server-openwebui.service; then
+        log "OpenWebUI stopped to free memory."
+    else
+        warn "Could not stop OpenWebUI."
+    fi
+fi
+
 ensure_rootless_docker
 ensure_docker_network
 ensure_user_systemd
@@ -158,7 +201,7 @@ ensure_linger
 
 new_unit="llm-server-${LLM_HARDWARE}-${LLM_ENGINE}.service"
 
-log "Installing $LLM_HARDWARE / $LLM_ENGINE."
+log "Setting up $LLM_HARDWARE / $LLM_ENGINE."
 "$run_script"
 
 state_file="$SERVICE_STATE/$new_unit.env"
@@ -168,32 +211,21 @@ source "$state_file"
 systemctl --user is-active --quiet "$UNIT" || die "Installed service is not active: $UNIT"
 [[ -L "$UNIT_DIR/$GENERIC_UNIT" ]] || die "Generic service alias was not created."
 
-ui_state="$SERVICE_STATE/llm-server-openwebui.service.env"
-ui_installed=0
-case "$WEBUI_MODE" in
-    no) ;;
-    yes)
+case "$ui_action" in
+    install)
         "$REPO_ROOT/setup/common/openwebui/run.sh"
-        ui_installed=1
         ;;
-    auto)
-        if [[ -f "$ui_state" ]]; then
-            if systemctl --user is-active --quiet llm-server-openwebui.service; then
-                ui_installed=1
-            elif confirm "OpenWebUI is installed but inactive. Start it?" yes; then
-                if systemctl --user start llm-server-openwebui.service; then
-                    ui_installed=1
-                else
-                    warn "OpenWebUI did not start; rerun setup/common/openwebui/run.sh."
-                fi
-            fi
-        elif [[ -t 0 ]] && confirm "Install OpenWebUI (separate service) now?" yes; then
-            "$REPO_ROOT/setup/common/openwebui/run.sh"
-            ui_installed=1
+    start)
+        if ! systemctl --user start llm-server-openwebui.service; then
+            warn "OpenWebUI did not start; rerun setup/common/openwebui/run.sh."
         fi
         ;;
-    *) die "LLM_WITH_WEBUI must be auto, yes or no." ;;
 esac
+
+ui_installed=0
+if systemctl --user is-active --quiet llm-server-openwebui.service; then
+    ui_installed=1
+fi
 
 lan_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
 lan_ip="${lan_ip:-localhost}"

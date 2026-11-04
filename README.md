@@ -32,11 +32,16 @@ The first `up.sh` run installs rootless prerequisites (`uidmap`, `slirp4netns`, 
 ## Usage
 
 ```bash
-./up.sh --list       # show detected GPUs and matching hardware
-./up.sh --dry-run    # show the selected model/service without installing
-./up.sh              # interactive install
-./down.sh            # stop/disable everything, keep models and data
+./up.sh --list         # show detected GPUs and matching hardware
+./up.sh --dry-run      # show the selected model/service without installing
+./up.sh                # interactive install
+./down.sh              # interactive: model only, OpenWebUI only, or both
+./down.sh --model      # stop only the model service
+./down.sh --webui      # stop only OpenWebUI
+./down.sh --all        # stop both (default without a terminal)
 ```
+
+Interactive `up.sh` asks about OpenWebUI right after the model selection. The answer defaults to **no**, because OpenWebUI uses about 1 GB of RAM and this profile runs close to the memory limit. If it is already running and you answer no, it is stopped before the model loads.
 
 Useful options and overrides:
 
@@ -51,7 +56,18 @@ LLM_CONTEXT=256k LLM_KV=k8v4 ./up.sh    # default on the RTX 5060 Ti profile
 
 If more than one GPU/hardware combination matches, `up.sh` asks which one to use. Each engine's `run.sh` then asks for the model unless `LLM_MODEL` is set.
 
-`up.sh` is safe to rerun: it stops the previous model service, keeps the downloaded model, and switches to the newly selected one.
+`up.sh` is safe to rerun. Each service stores a configuration signature; when the selected model, context, KV mode, ports, GPU and secrets are unchanged and the unit is already active, `up.sh` returns in seconds without touching the running service. Anything that differs triggers a reinstall. Use `LLM_FORCE_REINSTALL=1 ./up.sh` to force one.
+
+### Why a real install takes ~10 minutes
+
+The download is not the slow part. On every *restart* Strata page-locks about 44 GB of experts into RAM and copies them into the resident cache. With roughly 1–2 GB of headroom at 256K, the kernel reclaims continuously during that step, so it takes 10–12 minutes. `docker compose up -d` itself returns immediately; the wait is Strata loading the model.
+
+Consequences:
+
+- Re-running `up.sh` with no changes is fast now (signature match).
+- `systemctl --user restart llm-server` reloads the model and takes the same 10–12 minutes.
+- `down.sh --webui` stops only OpenWebUI and leaves the loaded model alone.
+- Switching context, KV mode, or model forces a reload.
 
 ## Services
 

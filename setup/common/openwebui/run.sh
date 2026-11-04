@@ -44,6 +44,40 @@ EOF
 fi
 
 ensure_core_packages
+ensure_api_key
+ensure_webui_secret
+API_KEY="$(cat "$API_KEY_FILE")"
+WEBUI_SECRET_KEY="$(cat "$WEBUI_SECRET_FILE")"
+
+TEMPLATE_VERSION=2
+CONFIG_SIG="$(config_signature "$TEMPLATE_VERSION" "$IMAGE" "$BIND_ADDR" "$HOST_PORT" \
+    "$API_KEY" "$WEBUI_SECRET_KEY")"
+HEALTH_URL="http://127.0.0.1:${HOST_PORT}/health"
+
+print_summary() {
+    cat <<EOF
+
+OpenWebUI service: $UNIT
+Web UI:  http://$BIND_ADDR:$HOST_PORT
+Backend: http://llm-model:8080/v1
+Logs:    journalctl --user -u $UNIT -f
+EOF
+}
+
+if [[ "${LLM_FORCE_REINSTALL:-0}" != "1" ]] && \
+   [[ "$(stored_config_signature "$SERVICE_DIR/.env")" == "$CONFIG_SIG" ]] && \
+   systemctl --user is-active --quiet "$UNIT"; then
+    if http_matches "$HEALTH_URL" '"status":[[:space:]]*true'; then
+        log "OpenWebUI is already running; nothing to do."
+    else
+        log "OpenWebUI is already running; it is still starting."
+    fi
+    enable_unit "$UNIT" 2>/dev/null || true
+    write_service_state "$UNIT" ui "$SERVICE_DIR" "$PROJECT" "$CONTAINER" "$HOST_PORT"
+    print_summary
+    exit 0
+fi
+
 if [[ -f "$SERVICE_STATE/$UNIT.env" ]]; then
     stop_service_from_state "$SERVICE_STATE/$UNIT.env"
 else
@@ -53,16 +87,13 @@ fi
 port_available "$HOST_PORT" || die "Port $HOST_PORT is already in use. Stop the conflicting service first."
 
 ensure_docker_network
-ensure_api_key
-ensure_webui_secret
-API_KEY="$(cat "$API_KEY_FILE")"
-WEBUI_SECRET_KEY="$(cat "$WEBUI_SECRET_FILE")"
 docker pull "$IMAGE"
 
 mkdir -p "$SERVICE_DIR"
 chmod 700 "$LLM_CONFIG" "$SERVICE_CONFIG" "$SERVICE_DIR"
 
 cat > "$SERVICE_DIR/.env" <<EOF
+CONFIG_SIG=$CONFIG_SIG
 IMAGE=$IMAGE
 HOST_PORT=$HOST_PORT
 BIND_ADDR=$BIND_ADDR
@@ -171,10 +202,4 @@ fi
 enable_unit "$UNIT"
 write_service_state "$UNIT" ui "$SERVICE_DIR" "$PROJECT" "$CONTAINER" "$HOST_PORT"
 
-cat <<EOF
-
-OpenWebUI service installed: $UNIT
-Web UI:  http://$BIND_ADDR:$HOST_PORT
-Backend: http://llm-model:8080/v1
-Logs:    journalctl --user -u $UNIT -f
-EOF
+print_summary

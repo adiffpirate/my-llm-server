@@ -11,11 +11,13 @@ source "$REPO_ROOT/lib/common.sh"
 setup_user_env
 
 DRY_RUN=0
+SELECT_ONLY=0
 while (($#)); do
     case "$1" in
         --dry-run) DRY_RUN=1 ;;
+        --select-only) SELECT_ONLY=1 ;;
         -h|--help)
-            echo "Usage: $0 [--dry-run]"
+            echo "Usage: $0 [--dry-run|--select-only]"
             exit 0
             ;;
         *) die "Unknown option: $1" ;;
@@ -71,6 +73,12 @@ MODEL_SIZE="${models[$selected]}"
 MODEL_FAMILY="${families[$selected]}"
 NEED_GB="${disk_gb[$selected]}"
 
+# up.sh asks about OpenWebUI after this, so it needs the choice without an install.
+if ((SELECT_ONLY)); then
+    printf 'LLM_MODEL=%q\n' "$MODEL_SIZE"
+    exit 0
+fi
+
 driver="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null | head -n1 | tr -d '[:space:]')"
 [[ -n "$driver" ]] || die "Could not read the NVIDIA driver version."
 driver_major="${driver%%.*}"
@@ -119,6 +127,47 @@ EOF
     exit 0
 fi
 
+ensure_api_key
+API_KEY="$(cat "$API_KEY_FILE")"
+
+TEMPLATE_VERSION=3
+CONFIG_SIG="$(config_signature "$TEMPLATE_VERSION" "$IMAGE" "$MODEL_FAMILY" "$MODEL_SIZE" \
+    "$CONTEXT" "$KV" "$BIND_ADDR" "$HOST_PORT" "$GPU_IDS" "$API_KEY")"
+HEALTH_URL="http://127.0.0.1:${HOST_PORT}/health"
+
+print_summary() {
+    cat <<EOF
+
+Strata service: $UNIT
+Model:       $MODEL_FAMILY / $MODEL_SIZE
+Context:     $CONTEXT ($KV KV, text only)
+API:         http://$BIND_ADDR:$HOST_PORT/v1
+Logs:        journalctl --user -u $UNIT -f
+Container:   docker logs -f $CONTAINER
+EOF
+    if ((FIRST_INSTALL)); then
+        printf 'First start: the model download/preparation can take hours; watch the container log.\n'
+    fi
+}
+
+# Reloading Strata page-locks tens of GB of experts, which takes minutes at
+# 256K. If nothing changed, leave the running service alone.
+if [[ "${LLM_FORCE_REINSTALL:-0}" != "1" ]] && \
+   [[ "$(stored_config_signature "$SERVICE_DIR/.env")" == "$CONFIG_SIG" ]] && \
+   systemctl --user is-active --quiet "$UNIT"; then
+    FIRST_INSTALL=0
+    if http_matches "$HEALTH_URL" '"loaded":[[:space:]]*true'; then
+        log "Already running with the requested configuration; nothing to do."
+    else
+        log "Already running with the requested configuration; the model is still starting."
+    fi
+    enable_unit "$UNIT" 2>/dev/null || true
+    activate_generic_unit "$UNIT"
+    write_service_state "$UNIT" model "$SERVICE_DIR" "$PROJECT" "$CONTAINER" "$HOST_PORT"
+    print_summary
+    exit 0
+fi
+
 if ((selected == 0 && ram_gb < 60)); then
     warn "Strata estimates about 54.8 GB for IQ3_S plus about 10 GB for the system."
     warn "This host has ${ram_gb} GB RAM. IQ3_S may use low-RAM/SSD mode, which is much slower."
@@ -160,12 +209,11 @@ if ! docker run --rm --runtime=nvidia \
     warn "Continuing as requested; Strata may use its low-RAM/SSD mode, which is much slower."
 fi
 
-ensure_api_key
-API_KEY="$(cat "$API_KEY_FILE")"
 mkdir -p "$SERVICE_DIR"
 chmod 700 "$LLM_CONFIG" "$SERVICE_CONFIG" "$SERVICE_DIR"
 
 cat > "$SERVICE_DIR/.env" <<EOF
+CONFIG_SIG=$CONFIG_SIG
 IMAGE=$IMAGE
 MODEL_FAMILY=$MODEL_FAMILY
 MODEL_SIZE=$MODEL_SIZE
@@ -287,14 +335,4 @@ enable_unit "$UNIT"
 activate_generic_unit "$UNIT"
 write_service_state "$UNIT" model "$SERVICE_DIR" "$PROJECT" "$CONTAINER" "$HOST_PORT"
 
-cat <<EOF
-
-Strata service installed: $UNIT
-Model:       $MODEL_FAMILY / $MODEL_SIZE
-API:         http://$BIND_ADDR:$HOST_PORT/v1
-Logs:        journalctl --user -u $UNIT -f
-Container:   docker logs -f $CONTAINER
-EOF
-if ((FIRST_INSTALL)); then
-    printf 'First start: the model download/preparation can take hours; watch the container log.\n'
-fi
+print_summary

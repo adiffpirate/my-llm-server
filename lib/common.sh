@@ -41,16 +41,16 @@ select_index() {
     local -a items=("$@")
     ((${#items[@]} > 0)) || die "internal error: empty menu"
 
+    if [[ ! -t 0 ]]; then
+        printf '%s\n' "$((default - 1))"
+        return
+    fi
+
     printf '\n%s\n' "$title" >&2
     local i
     for i in "${!items[@]}"; do
         printf '  %d) %s\n' "$((i + 1))" "${items[$i]}" >&2
     done
-
-    if [[ ! -t 0 ]]; then
-        printf '%s\n' "$((default - 1))"
-        return
-    fi
 
     local answer
     while true; do
@@ -254,6 +254,20 @@ ensure_docker_network() {
     docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 && return 0
     log "Creating Docker network $NETWORK_NAME."
     docker network create --label app=llm-server "$NETWORK_NAME" >/dev/null
+}
+
+# One hash over everything that requires a service restart when it changes.
+config_signature() {
+    printf '%s\n' "$@" | sha256sum | awk '{ print $1 }'
+}
+
+stored_config_signature() {
+    sed -n 's/^CONFIG_SIG=//p' "$1" 2>/dev/null | head -n1
+}
+
+http_matches() {
+    local url="$1" pattern="$2"
+    curl -fsS --max-time 5 "$url" 2>/dev/null | grep -Eq -- "$pattern"
 }
 
 ensure_secret_file() {
