@@ -49,6 +49,8 @@ LLM_PORT=9090 ./up.sh
 
 If more than one GPU/hardware combination matches, `up.sh` asks which one to use. Each engine's `run.sh` then asks for the model unless `LLM_MODEL` is set.
 
+`up.sh` is safe to rerun: it stops the previous model service, keeps the downloaded model, and switches to the newly selected one.
+
 ## Services
 
 Each hardware/engine gets a specific unit, plus one stable alias:
@@ -120,10 +122,19 @@ docker ps
 
 ## Model notes
 
-Strata defaults to `qwen / IQ3_S` as requested. The installer needs about 140 GB free for `IQ3_S`: the ~89 GB download, the prepared pack, and the draft layer. Strata's documentation estimates about 54.8 GB of model memory plus about 10 GB for the system; this host has 52 GB RAM, so Strata may fall back to its low-RAM/SSD mode, which is much slower. The first start downloads/prepares tens of GB and can take a long time. Watch it with:
+Strata defaults to `qwen / IQ3_S` as requested. The first install needs about 140 GB free: the ~89 GB download, the prepared pack, and the draft layer. Afterwards the prepared model occupies about 140 GB, and reinstalling does not need that space again. The installer checks for an existing model in the volume before enforcing the disk requirement.
+
+Strata's documentation estimates about 54.8 GB of model memory plus about 10 GB for the system; this host has 52 GB RAM, so Strata may fall back to its low-RAM/SSD mode, which is much slower. The first start downloads/prepares tens of GB and can take an hour or more. Watch it with:
 
 ```bash
 docker logs -f llm-server-rtx-5060-ti-strata-model
 ```
+
+## Troubleshooting
+
+- Service does not start: `systemctl --user status llm-server`, `journalctl --user -u llm-server -n 100`, then `docker logs --tail 100 llm-server-rtx-5060-ti-strata-model`.
+- Docker commands report "permission denied" or the rootful daemon: export the rootless socket first (`export DOCKER_HOST="unix://${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/docker.sock"`).
+- First start stops with a disk error: free space or pick a smaller model (`LLM_MODEL=IQ2_XS ./up.sh`).
+- OpenWebUI is up but lists no model: the model service must be healthy first; check `curl -H "Authorization: Bearer $(cat ~/.config/llm-server/api-key)" http://127.0.0.1:8080/v1/models`.
 
 The llama.cpp profile targets an RTX 4050 with CPU-MoE offload. It uses pinned image `ghcr.io/ggml-org/llama.cpp:server-cuda-b5343` and the Gemma/Qwen GGUF choices in its menu. For a custom file, set `LLM_MODEL=custom LLM_MODEL_PATH=/path/model.gguf` or enter the path interactively.
