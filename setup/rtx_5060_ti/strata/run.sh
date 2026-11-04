@@ -35,9 +35,10 @@ BIND_ADDR="${LLM_BIND_ADDR:-0.0.0.0}"
 # Use LLM_CONTEXT=128k LLM_KV=int8 for more RAM headroom and better KV quality.
 CONTEXT="${LLM_CONTEXT:-256k}"
 KV="${LLM_KV:-k8v4}"
-# Cap the experts copied into RAM. 38 GiB leaves the kernel room to page-lock
-# the cache reliably at 256K; the coldest experts are read from the SSD.
-RESIDENT_BUDGET_GIB="${LLM_RESIDENT_BUDGET_GIB:-38}"
+# Cap the experts copied into RAM. 41 GiB leaves enough room to start reliably
+# at 256K while keeping almost all experts resident; the coldest few are read
+# from the SSD when a token routes to them.
+RESIDENT_BUDGET_GIB="${LLM_RESIDENT_BUDGET_GIB:-41}"
 case "$KV" in
     int8|q4_0|k8v4|fp16) ;;
     *) die "LLM_KV must be int8, q4_0, k8v4 or fp16." ;;
