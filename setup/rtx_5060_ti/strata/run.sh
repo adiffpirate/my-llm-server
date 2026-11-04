@@ -282,5 +282,7 @@ Model:       $MODEL_FAMILY / $MODEL_SIZE
 API:         http://$BIND_ADDR:$HOST_PORT/v1
 Logs:        journalctl --user -u $UNIT -f
 Container:   docker logs -f $CONTAINER
-First start: model download/preparation can take a long time; watch the container log.
 EOF
+if ((FIRST_INSTALL)); then
+    printf 'First start: the model download/preparation can take hours; watch the container log.\n'
+fi
