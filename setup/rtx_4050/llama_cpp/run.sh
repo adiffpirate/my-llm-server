@@ -322,6 +322,9 @@ else
     if ((rc == 2)); then
         die "llama.cpp container exited before becoming healthy."
     fi
+    if ((rc == 3)); then
+        die "llama.cpp restarted before becoming healthy."
+    fi
     die "llama.cpp did not become healthy."
 fi
 

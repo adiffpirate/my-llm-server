@@ -405,14 +405,19 @@ rollback_compose_service() {
     fi
 }
 
-# Wait for an HTTP endpoint, stopping early if the container exits (return 2).
+# Wait for an HTTP endpoint, stopping early if the container exits (return 2)
+# or restarts (return 3).
 wait_http_running() {
     local url="$1" timeout="$2" name="$3" label="${4:-service}"
-    local deadline=$((SECONDS + timeout))
+    local deadline=$((SECONDS + timeout)) restarts
     log "Waiting for $label at $url (up to ${timeout}s)."
     while ((SECONDS < deadline)); do
         if ! container_running "$name"; then
             return 2
+        fi
+        restarts="$(docker inspect -f '{{.RestartCount}}' "$name" 2>/dev/null || echo 0)"
+        if ((restarts > 0)); then
+            return 3
         fi
         if curl -fsS --max-time 3 "$url" >/dev/null 2>&1; then
             return 0

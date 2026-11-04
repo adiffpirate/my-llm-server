@@ -144,6 +144,9 @@ else
     if ((rc == 2)); then
         die "OpenWebUI container exited before becoming healthy."
     fi
+    if ((rc == 3)); then
+        die "OpenWebUI restarted before becoming healthy."
+    fi
     die "OpenWebUI did not become healthy."
 fi
 

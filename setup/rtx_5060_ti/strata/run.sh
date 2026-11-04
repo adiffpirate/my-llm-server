@@ -37,13 +37,15 @@ SERVICE_DIR="$SERVICE_CONFIG/$UNIT"
 
 models=(IQ3_S IQ3_XXS IQ2_XS Q2_0 IQ1_M)
 families=(qwen qwen qwen qwen coder)
-disk_gb=(90 85 80 80 65)
+# Strata downloads the GGUF shards, writes a prepared pack, and fetches the
+# draft layer. These are observed/estimated free-space needs, with headroom.
+disk_gb=(140 130 120 118 105)
 labels=(
-    "IQ3_S - Qwen3.8-Flash-Next, best quality (~55 GB model memory, ~90 GB disk)"
-    "IQ3_XXS - Qwen3.8-Flash-Next, great quality (~47 GB model memory)"
-    "IQ2_XS - Qwen3.8-Flash-Next, better than Q2_0 (~39 GB model memory)"
-    "Q2_0 - Qwen3.8-Flash-Next, fastest (~38 GB model memory)"
-    "Coder - Qwen3.8-Flash-Next Coder IQ1_M (~32 GB model memory)"
+    "IQ3_S - Qwen3.8-Flash-Next, best quality (~55 GB model memory, ~140 GB disk)"
+    "IQ3_XXS - Qwen3.8-Flash-Next, great quality (~47 GB model memory, ~130 GB disk)"
+    "IQ2_XS - Qwen3.8-Flash-Next, better than Q2_0 (~39 GB model memory, ~120 GB disk)"
+    "Q2_0 - Qwen3.8-Flash-Next, fastest (~38 GB model memory, ~118 GB disk)"
+    "Coder - Qwen3.8-Flash-Next Coder IQ1_M (~32 GB model memory, ~105 GB disk)"
 )
 
 selected=-1
@@ -134,7 +136,8 @@ if ! docker run --rm --runtime=nvidia \
     -e NVIDIA_VISIBLE_DEVICES="$GPU_IDS" \
     -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     -v "$VOLUME:/data" \
-    "$IMAGE" strata launch --plan --family "$MODEL_FAMILY" --model "$MODEL_SIZE"; then
+    "$IMAGE" strata launch --plan --family "$MODEL_FAMILY" --model "$MODEL_SIZE" \
+    --context "$CONTEXT" --vision off --tune skip; then
     warn "Strata's plan reports that $MODEL_SIZE does not fit this host comfortably."
     warn "Continuing as requested; Strata may use its low-RAM/SSD mode, which is much slower."
 fi
@@ -234,18 +237,12 @@ if ((FIRST_INSTALL)); then
         :
     else
         rc=$?
-        if ((rc == 2)); then
+        if ((rc == 2 || rc == 3)); then
             rollback_compose_service "$UNIT" "$SERVICE_DIR" "$PROJECT" "$CONTAINER"
-            die "Strata exited during its first start."
-        fi
-        if ! container_running "$CONTAINER"; then
-            rollback_compose_service "$UNIT" "$SERVICE_DIR" "$PROJECT" "$CONTAINER"
-            die "Strata exited during its first start."
-        fi
-        restarts="$(docker inspect -f '{{.RestartCount}}' "$CONTAINER" 2>/dev/null || echo 0)"
-        if ((restarts > 0)); then
-            rollback_compose_service "$UNIT" "$SERVICE_DIR" "$PROJECT" "$CONTAINER"
-            die "Strata restarted during its first start."
+            if ((rc == 2)); then
+                die "Strata exited during its first start."
+            fi
+            die "Strata restarted during its first start. Check the container log for the reason."
         fi
         warn "Strata is still downloading/preparing the model; the API will appear when that finishes."
     fi
@@ -257,6 +254,9 @@ else
         rollback_compose_service "$UNIT" "$SERVICE_DIR" "$PROJECT" "$CONTAINER"
         if ((rc == 2)); then
             die "Strata container exited before becoming healthy."
+        fi
+        if ((rc == 3)); then
+            die "Strata restarted before becoming healthy. Check the container log for the reason."
         fi
         die "Strata did not become healthy."
     fi
