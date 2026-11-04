@@ -406,9 +406,9 @@ rollback_compose_service() {
 }
 
 # Wait for an HTTP endpoint, stopping early if the container exits (return 2)
-# or restarts (return 3).
+# or restarts (return 3). An optional ERE pattern must also match the body.
 wait_http_running() {
-    local url="$1" timeout="$2" name="$3" label="${4:-service}"
+    local url="$1" timeout="$2" name="$3" label="${4:-service}" pattern="${5:-}"
     local deadline=$((SECONDS + timeout)) restarts
     log "Waiting for $label at $url (up to ${timeout}s)."
     while ((SECONDS < deadline)); do
@@ -419,7 +419,11 @@ wait_http_running() {
         if ((restarts > 0)); then
             return 3
         fi
-        if curl -fsS --max-time 3 "$url" >/dev/null 2>&1; then
+        if [[ -n "$pattern" ]]; then
+            if curl -fsS --max-time 3 "$url" 2>/dev/null | grep -Eq -- "$pattern"; then
+                return 0
+            fi
+        elif curl -fsS --max-time 3 "$url" >/dev/null 2>&1; then
             return 0
         fi
         sleep 2

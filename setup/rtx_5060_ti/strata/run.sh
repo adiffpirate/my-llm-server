@@ -233,7 +233,7 @@ fi
 
 health_url="http://127.0.0.1:${HOST_PORT}/health"
 if ((FIRST_INSTALL)); then
-    if wait_http_running "$health_url" 120 "$CONTAINER" "Strata first start"; then
+    if wait_http_running "$health_url" 120 "$CONTAINER" "Strata first start" '"loaded":[[:space:]]*true'; then
         :
     else
         rc=$?
@@ -247,7 +247,7 @@ if ((FIRST_INSTALL)); then
         warn "Strata is still downloading/preparing the model; the API will appear when that finishes."
     fi
 else
-    if wait_http_running "$health_url" "${LLM_HEALTH_TIMEOUT:-1800}" "$CONTAINER" "Strata"; then
+    if wait_http_running "$health_url" "${LLM_HEALTH_TIMEOUT:-1800}" "$CONTAINER" "Strata" '"loaded":[[:space:]]*true'; then
         :
     else
         rc=$?
