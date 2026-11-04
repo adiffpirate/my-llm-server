@@ -25,7 +25,7 @@ models/                       llama.cpp GGUF files (gitignored)
 - Linux with systemd, a normal (non-root) login session, and `sudo`.
 - Docker Engine, the Docker Compose plugin, and the Docker rootless extras (`dockerd-rootless-setuptool.sh`). `up.sh` verifies them; it does not install Docker itself.
 - An NVIDIA GPU and driver. The scripts install the NVIDIA Container Toolkit if it is missing, but never the GPU driver.
-- For this machine: RTX 5060 Ti 16 GB, driver 595, about 110 GB free disk.
+- For this machine: RTX 5060 Ti 16 GB, driver 595, 200 GB disk (about 187 GB free).
 
 The first `up.sh` run installs rootless prerequisites (`uidmap`, `slirp4netns`, `fuse-overlayfs`), creates the rootless Docker user service, configures the NVIDIA runtime for rootless mode, and enables user lingering. These steps may prompt for `sudo`.
 
@@ -120,7 +120,7 @@ docker ps
 
 ## Model notes
 
-Strata defaults to `qwen / IQ3_S` as requested. Strata's documentation estimates about 54.8 GB for the model plus about 10 GB for the system; this host has 52 GB RAM, so Strata may fall back to its low-RAM/SSD mode, which is much slower. The first start downloads/prepares tens of GB and can take a long time. Watch it with:
+Strata defaults to `qwen / IQ3_S` as requested. The installer needs about 140 GB free for `IQ3_S`: the ~89 GB download, the prepared pack, and the draft layer. Strata's documentation estimates about 54.8 GB of model memory plus about 10 GB for the system; this host has 52 GB RAM, so Strata may fall back to its low-RAM/SSD mode, which is much slower. The first start downloads/prepares tens of GB and can take a long time. Watch it with:
 
 ```bash
 docker logs -f llm-server-rtx-5060-ti-strata-model
