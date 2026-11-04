@@ -28,7 +28,15 @@ ENGINE="$(basename "$SCRIPT_DIR")"
 GPU_IDS="${LLM_GPU_IDS:-all}"
 HOST_PORT="${LLM_PORT:-8080}"
 BIND_ADDR="${LLM_BIND_ADDR:-0.0.0.0}"
-CONTEXT="${LLM_CONTEXT:-32k}"
+# 256K with 4-bit values is the largest text-only context that fits this
+# 16 GB GPU / 52 GB RAM host and still decodes well above 25 tokens/s.
+# Use LLM_CONTEXT=128k LLM_KV=int8 for more RAM headroom and better KV quality.
+CONTEXT="${LLM_CONTEXT:-256k}"
+KV="${LLM_KV:-k8v4}"
+case "$KV" in
+    int8|q4_0|k8v4|fp16) ;;
+    *) die "LLM_KV must be int8, q4_0, k8v4 or fp16." ;;
+esac
 UNIT="llm-server-${HARDWARE}-${ENGINE}.service"
 PROJECT="$(printf '%s' "llm-server-${HARDWARE}-${ENGINE}" | tr '[:upper:]_' '[:lower:]-')"
 CONTAINER="${PROJECT}-model"
@@ -92,6 +100,7 @@ if ((DRY_RUN)); then
 Hardware:    $HARDWARE
 Engine:      $ENGINE
 Model:       $MODEL_FAMILY / $MODEL_SIZE
+Context:     $CONTEXT ($KV KV, text only)
 Image:       $IMAGE
 Service:     $UNIT
 Container:   $CONTAINER
@@ -146,7 +155,7 @@ if ! docker run --rm --runtime=nvidia \
     -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     -v "$VOLUME:/data" \
     "$IMAGE" strata launch --plan --family "$MODEL_FAMILY" --model "$MODEL_SIZE" \
-    --context "$CONTEXT" --vision off --tune skip; then
+    --context "$CONTEXT" --vision off --tune skip --kv "$KV"; then
     warn "Strata's plan reports that $MODEL_SIZE does not fit this host comfortably."
     warn "Continuing as requested; Strata may use its low-RAM/SSD mode, which is much slower."
 fi
@@ -161,6 +170,7 @@ IMAGE=$IMAGE
 MODEL_FAMILY=$MODEL_FAMILY
 MODEL_SIZE=$MODEL_SIZE
 CONTEXT=$CONTEXT
+KV=$KV
 HOST_PORT=$HOST_PORT
 BIND_ADDR=$BIND_ADDR
 GPU_IDS=$GPU_IDS
@@ -183,6 +193,8 @@ services:
       FAMILY: ${MODEL_FAMILY}
       MODEL: ${MODEL_SIZE}
       CONTEXT: ${CONTEXT}
+      KV: ${KV}
+      PARALLEL: "1"
       VISION: "off"
       TUNE: "skip"
       API_KEY: ${API_KEY}

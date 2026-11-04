@@ -45,6 +45,8 @@ Useful options and overrides:
 ./up.sh --no-webui
 LLM_HARDWARE=rtx_5060_ti LLM_ENGINE=strata LLM_MODEL=IQ3_S ./up.sh
 LLM_PORT=9090 ./up.sh
+LLM_CONTEXT=128k LLM_KV=int8 ./up.sh    # more RAM headroom, better KV quality
+LLM_CONTEXT=256k LLM_KV=k8v4 ./up.sh    # default on the RTX 5060 Ti profile
 ```
 
 If more than one GPU/hardware combination matches, `up.sh` asks which one to use. Each engine's `run.sh` then asks for the model unless `LLM_MODEL` is set.
@@ -130,9 +132,29 @@ docker ps
 
 ## Model notes
 
-Strata defaults to `qwen / IQ3_S` as requested. The first install needs about 140 GB free: the ~89 GB download, the prepared pack, and the draft layer. Afterwards the prepared model occupies about 140 GB, and reinstalling does not need that space again. The installer checks for an existing model in the volume before enforcing the disk requirement.
+Strata defaults to `qwen / IQ3_S`, text only, with a **256K context** and `k8v4` KV cache. That is the largest setting that fits this 52 GB RAM host while staying fast. Measured on this machine with the model loaded and OpenWebUI running:
 
-Strata's documentation estimates about 54.8 GB of model memory plus about 10 GB for the system; this host has 52 GB RAM, so Strata may fall back to its low-RAM/SSD mode, which is much slower. The first start downloads/prepares tens of GB and can take an hour or more. Watch it with:
+| Prompt | Prompt processing | Generation |
+| ---: | ---: | ---: |
+| ~1K tokens | 437 tok/s | 45 tok/s |
+| ~8K tokens | 1230 tok/s | 53 tok/s |
+| ~28K tokens | 1238 tok/s | 49 tok/s |
+| ~106K tokens | 1292 tok/s | 42 tok/s |
+| ~212K tokens | 1238 tok/s | 42–49 tok/s |
+
+The server reports `max_context: 262144`. Generation stays well above 25 tokens/s at full context.
+
+Memory is the limiting factor, not speed. At 256K the box runs with roughly 1 GB of available RAM, so avoid running other large programs. For more headroom and slightly better KV precision, use 128K with 8-bit KV:
+
+```bash
+LLM_CONTEXT=128k LLM_KV=int8 ./up.sh --with-webui
+```
+
+`k8v4` keeps keys at 8 bits and values at 4 bits: 23% less KV memory than int8, prompts 2–5% slower, and more accurate than `q4_0` on long documents. Loading the 256K profile takes about 10–12 minutes because Strata page-locks the expert cache; later restarts reuse the prepared model.
+
+The first install needs about 140 GB free: the ~89 GB download, the prepared pack, and the draft layer. Afterwards the prepared model occupies about 140 GB, and reinstalling does not need that space again. The installer checks for an existing model in the volume before enforcing the disk requirement.
+
+Strata's documentation estimates about 54.8 GB of model memory plus about 10 GB for the system; this host has 52 GB RAM, so Strata uses its low-RAM mode (some experts read from the SSD). The first start downloads/prepares tens of GB and can take an hour or more. Watch it with:
 
 ```bash
 docker logs -f llm-server-rtx-5060-ti-strata-model
