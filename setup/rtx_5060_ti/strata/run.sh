@@ -35,10 +35,15 @@ BIND_ADDR="${LLM_BIND_ADDR:-0.0.0.0}"
 # Use LLM_CONTEXT=128k LLM_KV=int8 for more RAM headroom and better KV quality.
 CONTEXT="${LLM_CONTEXT:-256k}"
 KV="${LLM_KV:-k8v4}"
+# Cap the experts copied into RAM. 38 GiB leaves the kernel room to page-lock
+# the cache reliably at 256K; the coldest experts are read from the SSD.
+RESIDENT_BUDGET_GIB="${LLM_RESIDENT_BUDGET_GIB:-38}"
 case "$KV" in
     int8|q4_0|k8v4|fp16) ;;
     *) die "LLM_KV must be int8, q4_0, k8v4 or fp16." ;;
 esac
+[[ "$RESIDENT_BUDGET_GIB" =~ ^[0-9]+$ ]] || \
+    die "LLM_RESIDENT_BUDGET_GIB must be a whole number of GiB."
 UNIT="llm-server-${HARDWARE}-${ENGINE}.service"
 PROJECT="$(printf '%s' "llm-server-${HARDWARE}-${ENGINE}" | tr '[:upper:]_' '[:lower:]-')"
 CONTAINER="${PROJECT}-model"
@@ -130,9 +135,9 @@ fi
 ensure_api_key
 API_KEY="$(cat "$API_KEY_FILE")"
 
-TEMPLATE_VERSION=3
+TEMPLATE_VERSION=4
 CONFIG_SIG="$(config_signature "$TEMPLATE_VERSION" "$IMAGE" "$MODEL_FAMILY" "$MODEL_SIZE" \
-    "$CONTEXT" "$KV" "$BIND_ADDR" "$HOST_PORT" "$GPU_IDS" "$API_KEY")"
+    "$CONTEXT" "$KV" "$RESIDENT_BUDGET_GIB" "$BIND_ADDR" "$HOST_PORT" "$GPU_IDS" "$API_KEY")"
 HEALTH_URL="http://127.0.0.1:${HOST_PORT}/health"
 
 print_summary() {
@@ -204,7 +209,8 @@ if ! docker run --rm --runtime=nvidia \
     -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
     -v "$VOLUME:/data" \
     "$IMAGE" strata launch --plan --family "$MODEL_FAMILY" --model "$MODEL_SIZE" \
-    --context "$CONTEXT" --vision off --tune skip --kv "$KV"; then
+    --context "$CONTEXT" --vision off --tune skip --kv "$KV" \
+    --set "resident_budget_gib=$RESIDENT_BUDGET_GIB"; then
     warn "Strata's plan reports that $MODEL_SIZE does not fit this host comfortably."
     warn "Continuing as requested; Strata may use its low-RAM/SSD mode, which is much slower."
 fi
@@ -219,6 +225,7 @@ MODEL_FAMILY=$MODEL_FAMILY
 MODEL_SIZE=$MODEL_SIZE
 CONTEXT=$CONTEXT
 KV=$KV
+RESIDENT_BUDGET_GIB=$RESIDENT_BUDGET_GIB
 HOST_PORT=$HOST_PORT
 BIND_ADDR=$BIND_ADDR
 GPU_IDS=$GPU_IDS
@@ -245,6 +252,7 @@ services:
       PARALLEL: "1"
       VISION: "off"
       TUNE: "skip"
+      STRATA_SET: "resident_budget_gib=${RESIDENT_BUDGET_GIB}"
       API_KEY: ${API_KEY}
       GPU: ${GPU_IDS}
     ports:

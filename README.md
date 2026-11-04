@@ -58,16 +58,18 @@ If more than one GPU/hardware combination matches, `up.sh` asks which one to use
 
 `up.sh` is safe to rerun. Each service stores a configuration signature; when the selected model, context, KV mode, ports, GPU and secrets are unchanged and the unit is already active, `up.sh` returns in seconds without touching the running service. Anything that differs triggers a reinstall. Use `LLM_FORCE_REINSTALL=1 ./up.sh` to force one.
 
-### Why a real install takes ~10 minutes
+### Startup time
 
-The download is not the slow part. On every *restart* Strata page-locks about 44 GB of experts into RAM and copies them into the resident cache. With roughly 1–2 GB of headroom at 256K, the kernel reclaims continuously during that step, so it takes 10–12 minutes. `docker compose up -d` itself returns immediately; the wait is Strata loading the model.
+The download is not the slow part. Without a resident cap, Strata page-locks about 44 GB of experts into RAM on every start. At 256K that left roughly 1 GB of headroom, so the kernel reclaimed continuously: startup took 10–15 minutes and sometimes hit Strata's load timeout.
+
+The default `LLM_RESIDENT_BUDGET_GIB=38` avoids that. The engine keeps 38 GiB resident and reads the coldest experts from the SSD when needed. Measured startup after the change: **58 seconds**. Answers are unchanged; only those cold reads are slower.
 
 Consequences:
 
-- Re-running `up.sh` with no changes is fast now (signature match).
-- `systemctl --user restart llm-server` reloads the model and takes the same 10–12 minutes.
+- Re-running `up.sh` with no changes returns in under a second (configuration signature match).
+- `systemctl --user restart llm-server` reloads in about a minute.
 - `down.sh --webui` stops only OpenWebUI and leaves the loaded model alone.
-- Switching context, KV mode, or model forces a reload.
+- Switching context, KV mode, budget, or model forces a reload.
 
 ## Services
 
@@ -152,11 +154,12 @@ Strata defaults to `qwen / IQ3_S`, text only, with a **256K context** and `k8v4`
 
 | Prompt | Prompt processing | Generation |
 | ---: | ---: | ---: |
-| ~1K tokens | 437 tok/s | 45 tok/s |
+| ~1K tokens | 275–375 tok/s | 30–60 tok/s |
 | ~8K tokens | 1230 tok/s | 53 tok/s |
-| ~28K tokens | 1238 tok/s | 49 tok/s |
-| ~106K tokens | 1292 tok/s | 42 tok/s |
-| ~212K tokens | 1238 tok/s | 42–49 tok/s |
+| ~28K tokens | 1216 tok/s | 52 tok/s |
+| ~212K tokens | 1230 tok/s | 41 tok/s |
+
+The first request after a start can sit near the low end while the coldest experts are read from the SSD; later requests warm up to the higher figure.
 
 The server reports `max_context: 262144`. Generation stays well above 25 tokens/s at full context.
 
@@ -166,7 +169,14 @@ Memory is the limiting factor, not speed. At 256K the box runs with roughly 1 GB
 LLM_CONTEXT=128k LLM_KV=int8 ./up.sh --with-webui
 ```
 
-`k8v4` keeps keys at 8 bits and values at 4 bits: 23% less KV memory than int8, prompts 2–5% slower, and more accurate than `q4_0` on long documents. Loading the 256K profile takes about 10–12 minutes because Strata page-locks the expert cache; later restarts reuse the prepared model.
+`k8v4` keeps keys at 8 bits and values at 4 bits: 23% less KV memory than int8, prompts 2–5% slower, and more accurate than `q4_0` on long documents.
+
+The installer also caps resident experts at 38 GiB (`LLM_RESIDENT_BUDGET_GIB`). Strata would otherwise try to page-lock about 43 GiB, which at 256K leaves so little headroom that the kernel spends 10–15 minutes reclaiming and can hit Strata's load timeout. With the cap the coldest experts are read from the SSD when a token routes to them; answers are unchanged, only those few reads are slower. Raise or lower it to trade RAM headroom against SSD reads:
+
+```bash
+LLM_RESIDENT_BUDGET_GIB=43 ./up.sh    # maximum cache, tightest RAM, slowest start
+LLM_RESIDENT_BUDGET_GIB=36 ./up.sh    # more headroom, a few more SSD reads
+```
 
 The first install needs about 140 GB free: the ~89 GB download, the prepared pack, and the draft layer. Afterwards the prepared model occupies about 140 GB, and reinstalling does not need that space again. The installer checks for an existing model in the volume before enforcing the disk requirement.
 

@@ -216,9 +216,13 @@ case "$ui_action" in
         "$REPO_ROOT/setup/common/openwebui/run.sh"
         ;;
     start)
+        systemctl --user enable llm-server-openwebui.service >/dev/null 2>&1 || true
         if ! systemctl --user start llm-server-openwebui.service; then
             warn "OpenWebUI did not start; rerun setup/common/openwebui/run.sh."
         fi
+        ;;
+    keep)
+        systemctl --user enable llm-server-openwebui.service >/dev/null 2>&1 || true
         ;;
 esac
 
