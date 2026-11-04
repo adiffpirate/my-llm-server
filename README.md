@@ -25,7 +25,7 @@ models/                       llama.cpp GGUF files (gitignored)
 - Linux with systemd, a normal (non-root) login session, and `sudo`.
 - Docker Engine, the Docker Compose plugin, and the Docker rootless extras (`dockerd-rootless-setuptool.sh`). `up.sh` verifies them; it does not install Docker itself.
 - An NVIDIA GPU and driver. The scripts install the NVIDIA Container Toolkit if it is missing, but never the GPU driver.
-- For this machine: RTX 5060 Ti 16 GB, driver 595, 200 GB disk (about 187 GB free).
+- For this machine: RTX 5060 Ti 16 GB, driver 595, 200 GB disk (about 42 GB free with the model installed).
 
 The first `up.sh` run installs rootless prerequisites (`uidmap`, `slirp4netns`, `fuse-overlayfs`), creates the rootless Docker user service, configures the NVIDIA runtime for rootless mode, and enables user lingering. These steps may prompt for `sudo`.
 
@@ -62,7 +62,7 @@ If more than one GPU/hardware combination matches, `up.sh` asks which one to use
 
 The download is not the slow part. Without a resident cap, Strata page-locks about 44 GB of experts into RAM on every start. At 256K that left roughly 1 GB of headroom, so the kernel reclaimed continuously: startup took 10–15 minutes and sometimes hit Strata's load timeout.
 
-The default `LLM_RESIDENT_BUDGET_GIB=38` avoids that. The engine keeps 38 GiB resident and reads the coldest experts from the SSD when needed. Measured startup after the change: **58 seconds**; a full `./up.sh --with-webui` from a stopped state took **86 seconds**. Answers are unchanged; only those cold reads are slower.
+The default `LLM_RESIDENT_BUDGET_GIB=41` avoids that. The engine keeps 41 GiB resident and reads the coldest experts from the SSD when needed. Measured startup after the change: **58 seconds**; a full `./up.sh --with-webui` from a stopped state took **86 seconds**. Answers are unchanged; only those cold reads are slower.
 
 Consequences:
 
@@ -163,7 +163,7 @@ The first request after a start can sit near the low end while the coldest exper
 
 The server reports `max_context: 262144`. Generation stays well above 25 tokens/s at full context.
 
-Memory is the limiting factor, not speed. At 256K the box runs with roughly 1 GB of available RAM, so avoid running other large programs. For more headroom and slightly better KV precision, use 128K with 8-bit KV:
+Memory is the limiting factor, not speed. At 256K the box runs with roughly 4 GB of available RAM, so avoid running other large programs. For more headroom and slightly better KV precision, use 128K with 8-bit KV:
 
 ```bash
 LLM_CONTEXT=128k LLM_KV=int8 ./up.sh --with-webui
