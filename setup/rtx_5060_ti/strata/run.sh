@@ -78,6 +78,15 @@ fi
 ram_gb="$(awk '/MemTotal/ { printf "%d", $2 / 1048576 }' /proc/meminfo)"
 free_gb="$(df -Pk "$HOME" | awk 'NR == 2 { printf "%d", $4 / 1048576 }')"
 
+# The large download only happens once. A volume that already holds a GGUF in
+# Strata's layout must not need the free space for another download.
+MODEL_INSTALLED=0
+volume_path="$(docker volume inspect -f '{{.Mountpoint}}' "$VOLUME" 2>/dev/null || true)"
+if [[ -n "$volume_path" ]] && \
+   find "$volume_path/Strata-data/models" -maxdepth 4 -name '*.gguf' -print -quit 2>/dev/null | grep -q .; then
+    MODEL_INSTALLED=1
+fi
+
 if ((DRY_RUN)); then
     cat <<EOF
 Hardware:    $HARDWARE
@@ -90,7 +99,13 @@ API:         http://$BIND_ADDR:$HOST_PORT/v1
 Data volume: $VOLUME
 Config:      $SERVICE_DIR
 RAM:         ${ram_gb} GB
-Free disk:   ${free_gb} GB (want at least ${NEED_GB} GB)
+Free disk:   ${free_gb} GB$(
+    if ((MODEL_INSTALLED)); then
+        printf ' (model already downloaded)'
+    else
+        printf ' (want at least %s GB for the download)' "$NEED_GB"
+    fi
+)
 EOF
     exit 0
 fi
@@ -99,8 +114,8 @@ if ((selected == 0 && ram_gb < 60)); then
     warn "Strata estimates about 54.8 GB for IQ3_S plus about 10 GB for the system."
     warn "This host has ${ram_gb} GB RAM. IQ3_S may use low-RAM/SSD mode, which is much slower."
 fi
-if ((free_gb < NEED_GB)); then
-    die "Not enough free disk for $MODEL_SIZE: ${free_gb} GB free, ${NEED_GB} GB required."
+if ((MODEL_INSTALLED == 0 && free_gb < NEED_GB)); then
+    die "Not enough free disk for the $MODEL_SIZE download: ${free_gb} GB free, ${NEED_GB} GB required."
 fi
 
 ensure_core_packages
@@ -123,13 +138,7 @@ docker pull "$IMAGE"
 log "Testing GPU access through rootless Docker."
 gpu_smoke_test "$IMAGE" "$GPU_IDS" || die "GPU smoke test failed. Run ./up.sh to repair rootless NVIDIA configuration."
 
-FIRST_INSTALL=1
-if docker volume inspect "$VOLUME" >/dev/null 2>&1; then
-    if docker run --rm -v "$VOLUME:/data:ro" --entrypoint sh "$IMAGE" \
-        -c 'find /data/Strata-data/models -name "*.gguf" -print -quit 2>/dev/null' 2>/dev/null | grep -q .; then
-        FIRST_INSTALL=0
-    fi
-fi
+FIRST_INSTALL=$((1 - MODEL_INSTALLED))
 
 log "Checking the model plan with Strata (nothing is downloaded by --plan)."
 if ! docker run --rm --runtime=nvidia \
