@@ -42,7 +42,10 @@ The first `up.sh` run installs rootless prerequisites (`uidmap`, `slirp4netns`, 
 ./down.sh --model      # stop only the model service
 ./down.sh --webui      # stop only OpenWebUI
 ./down.sh --all        # stop both (default without a terminal)
+./down.sh --model --delete-data --yes  # also delete the model's Docker volume
 ```
+
+`--delete-data` removes the Docker volumes that hold the selected data: `llm-server-*-strata-data` for the model, and `llm-server-openwebui-data` / `llm-server-openwebui-static` for OpenWebUI. It asks once; `--yes` skips the question (required without a terminal). The llama.cpp `models/` directory is a host bind mount and is never deleted.
 
 Interactive `up.sh` asks about OpenWebUI right after the model selection. The answer defaults to **no**, because OpenWebUI uses about 1 GB of RAM, which matters on memory-tight profiles. If it is already running and you answer no, it is stopped before the model loads.
 
@@ -52,9 +55,12 @@ Useful options and overrides:
 ./up.sh --with-webui
 ./up.sh --no-webui
 LLM_HARDWARE=rtx_5060_ti LLM_ENGINE=strata LLM_MODEL=IQ3_S ./up.sh
+LLM_MODEL=IST-DAS-2.00bpw ./up.sh       # DeepSeek V4.1 Flash (257 GB download)
+LLM_SPEED=full LLM_MODEL=IST-DAS-2.00bpw ./up.sh  # all 6 experts per word
 LLM_PORT=9090 ./up.sh
 LLM_CONTEXT=128k LLM_KV=int8 ./up.sh    # more RAM headroom, better KV quality
 LLM_CONTEXT=256k LLM_KV=k8v4 ./up.sh    # larger context, smaller KV
+LLM_POOL_WORKERS=8 ./up.sh              # cap the Qwen CPU expert pool at 8 workers
 ```
 
 Defaults such as model, context, KV mode and resident budget are set per engine in `setup/<hardware>/<engine>/run.sh`; the environment variables above override them.
@@ -162,11 +168,15 @@ LLM_CONTEXT=128k LLM_KV=int8 ./up.sh --with-webui   # more RAM headroom
 LLM_RESIDENT_BUDGET_GIB=38 ./up.sh                  # fewer experts in RAM
 ```
 
+The same menu also offers DeepSeek-V4.1-Flash 1017 (`LLM_MODEL=IST-DAS-1.75bpw`, `IST-DAS-2.00bpw` or `IST-DAS-2.25bpw`, or the aliases `deepseek`, `1.75bpw`, `2.00bpw`, `2.25bpw`). These are separate 4-shard IST-DAS sets plus a shared 111 GB n-gram table: 239, 257 and 274 GB of disk, and at least 34, 40 and 44 GB of RAM. On a 16 GB card most experts run on the CPU, so generation is measured in single-digit tokens per second. DeepSeek has its own engine package and sizes its own RAM cache; `LLM_RESIDENT_BUDGET_GIB` does not apply to it. `LLM_SPEED=auto|faster|full` selects the engine default (5 experts on 16 GB cards), 5 experts, or all 6; its context can go up to 1M (128K and 256K were tested here).
+
+DeepSeek stores its files under `Strata-data/models/deepseek-v4.1-flash-<size>/`. The shared n-gram table and drafter are reused when switching between the three sizes.
+
 `k8v4` keeps keys at 8 bits and values at 4 bits: 23% less KV memory than int8, prompts 2–5% slower, and more accurate than `q4_0` on long documents.
 
 The resident budget (`LLM_RESIDENT_BUDGET_GIB`) trades RAM headroom against SSD reads. Removing it makes Strata page-lock all experts on every start, which is much slower on memory-tight hosts and can hit Strata's load timeout. Answers are the same either way.
 
-The first Strata install needs about 140 GB free: the download, the prepared pack, and the draft layer. Afterwards the prepared model occupies about 140 GB, and reinstalling does not need that space again. The installer checks for an existing model in the volume before enforcing the disk requirement.
+The first Qwen Strata install needs about 140 GB free: the download, the prepared pack, and the draft layer. Afterwards the prepared model occupies about 140 GB, and reinstalling does not need that space again. The installer checks for the selected model in the volume before enforcing the disk requirement; DeepSeek sizes are listed above.
 
 Strata's documentation estimates about 54.8 GB of model memory plus about 10 GB for the system. If the host has less, Strata uses its low-RAM mode and reads some experts from the SSD. The first start downloads/prepares tens of GB and can take an hour or more. Watch it with:
 
@@ -175,6 +185,19 @@ docker logs -f <container>
 ```
 
 See `setup/rtx_5060_ti/README.md` for measured throughput and startup times on the reference hardware.
+
+## CPU threads and benchmarking
+
+The Qwen Strata profile uses the CPU expert pool for the experts that do not fit in VRAM. By default the engine starts one worker per logical CPU (15 workers plus the host thread here). `LLM_POOL_WORKERS=N` caps the pool; fewer workers reduce CPU power and heat, at the cost of prompt processing and, to a smaller degree, generation. The GPU still does attention, the resident expert cache and the output head.
+
+`bench.py` sends a long prompt, reads the server's own `timings` block, and samples system CPU busy and NVIDIA GPU power/utilization while the request runs:
+
+```bash
+./bench.py --tokens 32768 131072 245000 --generate 256 --label pool-8
+./bench.py --tokens 245000 --repeat 2 --out /tmp/bench.jsonl
+```
+
+It accepts `--base`, `--key-file`, `--model`, `--timeout` and `--out`. The measured thread sweep for the reference host is in `setup/rtx_5060_ti/README.md`.
 
 ## Troubleshooting
 
