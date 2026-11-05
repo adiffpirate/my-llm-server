@@ -168,7 +168,7 @@ EOF
         if ((DELETE_DATA)); then
             printf 'Deleted the LLM model data volume(s).\n'
         else
-            printf 'Model files and Docker volumes were kept. Use --delete-data to remove them.\n'
+            printf 'Model Docker volumes were kept. Use --delete-data to remove them.\n'
         fi
         ;;
     webui)
@@ -179,6 +179,8 @@ The LLM model service, its data and configuration were kept.
 EOF
         if ((DELETE_DATA)); then
             printf 'Deleted the OpenWebUI data volume(s).\n'
+        else
+            printf 'OpenWebUI data volumes were kept. Use --delete-data to remove them.\n'
         fi
         ;;
     all)
@@ -191,7 +193,7 @@ EOF
         if ((DELETE_DATA)); then
             printf 'Deleted the LLM model data and OpenWebUI data volume(s).\n'
         else
-            printf 'Kept on disk: model files and Docker volumes. Use --delete-data to remove them.\n'
+            printf 'Kept on disk: model Docker volumes. Use --delete-data to remove them.\n'
         fi
         ;;
 esac

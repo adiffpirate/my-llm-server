@@ -41,11 +41,11 @@ Every engine installer must keep this interface; `up.sh` depends on it.
 
 Per-hardware specifics live with the profile; do not assume one machine's numbers apply to another.
 
-- `setup/rtx_5060_ti` targets a 16 GB RTX 5060 Ti and defaults to Strata `IQ3_S`, text only, **256K context**, `k8v4` KV, `LLM_RESIDENT_BUDGET_GIB=41`, `PARALLEL=1`. Measurements are in `setup/rtx_5060_ti/README.md`.
+- `setup/rtx_5060_ti` targets a 16 GB RTX 5060 Ti and defaults to Strata `IQ3_S`, text only, **256K context**, `k8v4` KV, `LLM_RESIDENT_BUDGET_GIB=41`, `LLM_POOL_WORKERS=4`, `PARALLEL=1`. Measurements are in `setup/rtx_5060_ti/README.md`.
 - The same Strata menu also offers DeepSeek-V4.1-Flash 1017 (IST-DAS 1.75/2.00/2.25 bpw). It downloads 239/257/274 GB, runs its own engine package, and sizes its own RAM cache; `LLM_RESIDENT_BUDGET_GIB` does not apply. `LLM_SPEED=auto|faster|full` selects the engine default, 5, or 6 experts per word.
 - **Do not remove the resident budget from that profile.** Without it Strata page-locks all experts every start: many minutes on memory-tight hosts, sometimes exceeding Strata's computed load timeout.
 - Use `LLM_CONTEXT=128k LLM_KV=int8` for more headroom. Avoid `--mlock`/unlimited memlock: the locked-memory limit on the reference host is only 8 MB.
-- `LLM_POOL_WORKERS=N` caps the Qwen CPU expert pool (engine default: every logical CPU, 15 workers here). Measure with `bench.py`; fewer workers trade PP/TG for CPU power. It does not apply to DeepSeek.
+- `LLM_POOL_WORKERS=N` caps the Qwen CPU expert pool (default 4; the engine default is one per logical CPU, 15 workers here). Measure with `bench.py`; fewer workers trade PP/TG for CPU power. `auto` or `0` restores the engine default. It does not apply to DeepSeek.
 - First Strata install needs ~140 GB free. Reinstalls skip that check when a GGUF already exists in the volume.
 - Pinned images (change deliberately, verify the tag exists): `ghcr.io/niko1221/strata:0.2.9-cuda13`, `ghcr.io/ggml-org/llama.cpp:server-cuda-b5343`, `ghcr.io/open-webui/open-webui:v0.13.0`.
 

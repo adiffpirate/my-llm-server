@@ -240,10 +240,26 @@ def main() -> int:
                 "pp_cpu_cores": pp_stats.get("cpu_cores"),
                 "pp_gpu_util_pct": pp_stats.get("gpu_util_pct"),
                 "pp_gpu_power_w": pp_stats.get("gpu_power_w"),
+                "pp_cpu_core_s_per_token": (
+                    round(pp_stats["cpu_cores"] / timings["prompt_per_second"], 4)
+                    if pp_stats.get("cpu_cores") and timings.get("prompt_per_second") else None
+                ),
+                "pp_gpu_j_per_token": (
+                    round(pp_stats["gpu_power_w"] / timings["prompt_per_second"], 3)
+                    if pp_stats.get("gpu_power_w") and timings.get("prompt_per_second") else None
+                ),
                 "tg_cpu_pct": tg_stats.get("cpu_busy_pct"),
                 "tg_cpu_cores": tg_stats.get("cpu_cores"),
                 "tg_gpu_util_pct": tg_stats.get("gpu_util_pct"),
                 "tg_gpu_power_w": tg_stats.get("gpu_power_w"),
+                "tg_cpu_core_s_per_token": (
+                    round(tg_stats["cpu_cores"] / timings["predicted_per_second"], 4)
+                    if tg_stats.get("cpu_cores") and timings.get("predicted_per_second") else None
+                ),
+                "tg_gpu_j_per_token": (
+                    round(tg_stats["gpu_power_w"] / timings["predicted_per_second"], 3)
+                    if tg_stats.get("gpu_power_w") and timings.get("predicted_per_second") else None
+                ),
             }
             line = json.dumps(row)
             print(line, flush=True)

@@ -60,7 +60,7 @@ LLM_SPEED=full LLM_MODEL=IST-DAS-2.00bpw ./up.sh  # all 6 experts per word
 LLM_PORT=9090 ./up.sh
 LLM_CONTEXT=128k LLM_KV=int8 ./up.sh    # more RAM headroom, better KV quality
 LLM_CONTEXT=256k LLM_KV=k8v4 ./up.sh    # larger context, smaller KV
-LLM_POOL_WORKERS=8 ./up.sh              # cap the Qwen CPU expert pool at 8 workers
+LLM_POOL_WORKERS=8 ./up.sh              # fastest short/medium prompts (profile default is 4)
 ```
 
 Defaults such as model, context, KV mode and resident budget are set per engine in `setup/<hardware>/<engine>/run.sh`; the environment variables above override them.
@@ -188,7 +188,7 @@ See `setup/rtx_5060_ti/README.md` for measured throughput and startup times on t
 
 ## CPU threads and benchmarking
 
-The Qwen Strata profile uses the CPU expert pool for the experts that do not fit in VRAM. By default the engine starts one worker per logical CPU (15 workers plus the host thread here). `LLM_POOL_WORKERS=N` caps the pool; fewer workers reduce CPU power and heat, at the cost of prompt processing and, to a smaller degree, generation. The GPU still does attention, the resident expert cache and the output head.
+The Qwen Strata profile uses the CPU expert pool for the experts that do not fit in VRAM. The engine would start one worker per logical CPU (15 workers plus the host thread here); the profile caps it at **4 workers** because that kept long-context PP/TG at the default level while using about half the CPU. `LLM_POOL_WORKERS=N` overrides it: 8 is the fastest choice for short and medium prompts, 2 saves more power but loses generation speed, and `auto` or `0` restores the engine's one-worker-per-logical-CPU default. The GPU still does attention, the resident expert cache and the output head.
 
 `bench.py` sends a long prompt, reads the server's own `timings` block, and samples system CPU busy and NVIDIA GPU power/utilization while the request runs:
 

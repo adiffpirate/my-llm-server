@@ -8,6 +8,7 @@ Setup for a 16 GB RTX 5060 Ti. `hardware.conf` matches GPUs named `RTX 5060 Ti` 
 - 256K context (`LLM_CONTEXT=256k`)
 - `k8v4` KV cache, single parallel slot
 - `LLM_RESIDENT_BUDGET_GIB=41`
+- `LLM_POOL_WORKERS=4` (measured power/speed knee; `auto` or `0` restores the engine default)
 
 These are the settings the installer uses; override them with the `LLM_*` environment variables. The same Strata menu also offers DeepSeek-V4.1-Flash 1017 (`LLM_MODEL=IST-DAS-1.75bpw`, `IST-DAS-2.00bpw` or `IST-DAS-2.25bpw`), which uses its own engine, ignores `LLM_RESIDENT_BUDGET_GIB`, and takes `LLM_SPEED=auto|faster|full` (the default `auto` is 5 experts per word on this 16 GB card).
 
@@ -23,6 +24,37 @@ Measured on a test host with an RTX 5060 Ti 16 GB, driver 595, 52 GB RAM and 200
 | ~212K tokens | 1231 tok/s | 41.5 tok/s |
 
 The server reports `max_context: 262144` with these defaults. The first request after a start can sit near the low end while the coldest experts are read from the SSD; later requests warm up to the higher figure.
+
+### Qwen CPU expert pool
+
+The Qwen engine starts one CPU expert worker per logical processor (15 workers plus the host thread here). `LLM_POOL_WORKERS=N` caps the pool. Prompt processing is GPU-bound; token generation is the CPU-bound part. Measured with two 32K-token prompts, 256 generated tokens, OpenWebUI stopped, 256K context:
+
+| Pool workers | PP tok/s | TG tok/s | TG CPU cores | TG GPU power |
+| ---: | ---: | ---: | ---: | ---: |
+| default (15) | 1135 | 46.0 | 12.7 | 53.0 W |
+| 12 | 1135 | 54.0 | 11.0 | 57.6 W |
+| 10 | 1134 | 50.0 | 9.6 | 59.3 W |
+| **8** | **1134** | **59.8** | **7.3** | **59.6 W** |
+| 6 | 1133 | 54.2 | 6.2 | 56.2 W |
+| 4 | 1136 | 50.3 | 4.8 | 54.6 W |
+| 2 | 1137 | 44.5 | 2.8 | 55.6 W |
+
+PP stayed at roughly 1,130–1,140 tok/s and 1.1–1.6 CPU cores in every row: it is GPU-bound. Eight workers gave the highest TG at 32K; four is the power-saving knee, still beating the default at 32K (50.3 vs 46.0 tok/s) while using about half the CPU. Two loses too much generation speed.
+
+Long-context validation (one warm 128K and one 241K prompt, 256 generated tokens):
+
+| Workers | Prompt | Prompt tokens | PP tok/s | TG tok/s | TG CPU cores |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| default (15) | 128K | 129,062 | 1100.8 | 52.5 | 8.26 |
+| 8 | 128K | 129,062 | 1101.4 | 54.9 | 8.21 |
+| 6 | 128K | 129,062 | 1099.3 | 52.3 | 6.26 |
+| **4** | **128K** | **129,062** | **1100.8** | **52.0** | **4.69** |
+| default (15) | 241K | 241,184 | 1044.9 | 57.4 | 8.67 |
+| 8 | 241K | 241,184 | 1045.2 | 57.8 | 7.23 |
+| 6 | 241K | 241,184 | 1042.6 | 58.0 | 6.08 |
+| **4** | **241K** | **241,184** | **1047.9** | **57.2** | **4.71** |
+
+At long context PP is identical across worker counts. Four workers matches the default's TG (52.0 vs 52.5 at 128K, 57.2 vs 57.4 at 241K) while using 4.7 CPU cores instead of 8.3–8.7, and it still beats the default at 32K. That is the profile default. Eight workers is the fastest choice for short and medium prompts (59.8 tok/s at 32K); six is the middle. `LLM_POOL_WORKERS=auto` or `0` restores the engine's one-worker-per-logical-CPU default.
 
 ### DeepSeek V4.1-Flash
 

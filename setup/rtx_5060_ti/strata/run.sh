@@ -40,10 +40,11 @@ KV="${LLM_KV:-k8v4}"
 # from the SSD when a token routes to them.
 RESIDENT_BUDGET_GIB="${LLM_RESIDENT_BUDGET_GIB:-41}"
 POOL_WORKERS="${LLM_POOL_WORKERS:-}"
-if [[ -n "$POOL_WORKERS" ]]; then
-    [[ "$POOL_WORKERS" =~ ^[0-9]+$ ]] || die "LLM_POOL_WORKERS must be a whole number."
-    ((POOL_WORKERS >= 1)) || die "LLM_POOL_WORKERS must be at least 1."
-fi
+case "$POOL_WORKERS" in
+    ""|auto|0) ;;
+    *[!0-9]*) die "LLM_POOL_WORKERS must be a whole number, auto or 0." ;;
+    *) ((POOL_WORKERS >= 1)) || die "LLM_POOL_WORKERS must be at least 1." ;;
+esac
 case "$KV" in
     int8|q4_0|k8v4|fp16) ;;
     *) die "LLM_KV must be int8, q4_0, k8v4 or fp16." ;;
@@ -118,15 +119,23 @@ if ((IS_DEEPSEEK)); then
         full) STRATA_SET_VALUE="experts=6" ;;
         *) STRATA_SET_VALUE="experts=auto" ;;
     esac
+    if [[ "$POOL_WORKERS" =~ ^[0-9]+$ ]] && ((POOL_WORKERS >= 1)); then
+        warn "LLM_POOL_WORKERS only applies to the Qwen Strata engine; ignoring it for $MODEL_SIZE."
+    fi
+    POOL_WORKERS=""
 else
+    # Measured on this profile: 4 workers keeps long-context PP/TG at the
+    # default level while using about half the CPU. auto/0 restores the
+    # engine's own pool (one worker per logical CPU).
+    case "$POOL_WORKERS" in
+        "") POOL_WORKERS=4 ;;
+        auto|0) POOL_WORKERS="" ;;
+    esac
     [[ "$SPEED" == "auto" ]] || warn "LLM_SPEED only applies to DeepSeek models; ignoring it for $MODEL_SIZE."
     STRATA_SET_VALUE="resident_budget_gib=$RESIDENT_BUDGET_GIB"
     if [[ -n "$POOL_WORKERS" ]]; then
         STRATA_SET_VALUE+=" pool_workers=$POOL_WORKERS"
     fi
-fi
-if ((IS_DEEPSEEK)) && [[ -n "$POOL_WORKERS" ]]; then
-    warn "LLM_POOL_WORKERS only applies to the Qwen Strata engine; ignoring it for $MODEL_SIZE."
 fi
 
 # up.sh asks about OpenWebUI after this, so it needs the choice without an install.
